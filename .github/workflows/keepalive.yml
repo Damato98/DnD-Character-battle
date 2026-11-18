@@ -1,0 +1,37 @@
+name: Keep Supabase alive
+
+on:
+  schedule:
+    - cron: '17 9 */3 * *'   # cada ~3 días, 09:17 UTC
+  workflow_dispatch:          # permite correrlo a mano desde la pestaña Actions
+
+permissions:
+  contents: write             # solo para el commit vacío de mantenimiento
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Consultar la base de Supabase
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: |
+          # -f hace que el job falle (y GitHub te avise por mail) si Supabase no responde bien
+          curl -fsS "$SUPABASE_URL/rest/v1/characters?select=id&limit=1" \
+            -H "apikey: $SUPABASE_ANON_KEY"
+          echo
+
+      # GitHub desactiva los cron de repos públicos tras 60 días sin actividad.
+      # Si el último commit tiene más de 45 días, hace un commit vacío para evitarlo.
+      - uses: actions/checkout@v4
+      - name: Mantener activo el repositorio
+        run: |
+          last=$(git log -1 --format=%ct)
+          now=$(date +%s)
+          if [ $(( (now - last) / 86400 )) -ge 45 ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git commit --allow-empty -m "chore: keepalive"
+            git push
+          fi
